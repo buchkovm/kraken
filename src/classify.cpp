@@ -22,6 +22,7 @@
 #include "krakenutil.hpp"
 #include "quickfile.hpp"
 #include "seqreader.hpp"
+#include "fqmapper.hpp"
 
 const size_t DEF_WORK_UNIT_SIZE = 500000;
 
@@ -30,7 +31,7 @@ using namespace kraken;
 
 void parse_command_line(int argc, char **argv);
 void usage(int exit_code=EX_USAGE);
-void process_file(char *filename);
+void process_file(char *filename, char *filename2);
 void classify_sequence(DNASequence &dna, ostringstream &koss,
                        ostringstream &coss, ostringstream &uoss);
 string hitlist_string(vector<uint32_t> &taxa, vector<uint8_t> &ambig);
@@ -39,6 +40,8 @@ void report_stats(struct timeval time1, struct timeval time2);
 
 int Num_threads = 1;
 string DB_filename, Index_filename, Nodes_filename;
+string Map_filename = "";
+string FQ_out_prefix = "";
 bool Quick_mode = false;
 bool Fastq_input = false;
 bool Print_classified = false;
@@ -49,6 +52,7 @@ bool Only_classified_kraken_output = false;
 uint32_t Minimum_hit_count = 1;
 map<uint32_t, uint32_t> Parent_map;
 KrakenDB Database;
+FQMapper *FQ_mapper;
 string Classified_output_file, Unclassified_output_file, Kraken_output_file;
 ostream *Classified_output;
 ostream *Unclassified_output;
@@ -59,6 +63,9 @@ uint64_t total_classified = 0;
 uint64_t total_sequences = 0;
 uint64_t total_bases = 0;
 
+bool Paired_end = false;
+
+#ifndef TEST
 int main(int argc, char **argv) {
   #ifdef _OPENMP
   omp_set_num_threads(1);
@@ -85,6 +92,14 @@ int main(int argc, char **argv) {
   KrakenDBIndex db_index(idx_file.ptr());
   Database.set_index(&db_index);
 
+  if (Map_filename != "") {
+    QuickFile map_file;
+    map_file.open_file(Map_filename);
+    if (Populate_memory)
+      map_file.load_file();
+    FQ_mapper = new FQMapper(map_file.ptr(), FQ_out_prefix);
+  }
+
   if (Populate_memory)
     cerr << "complete." << endl;
 
@@ -94,6 +109,7 @@ int main(int argc, char **argv) {
     else
       Classified_output = new ofstream(Classified_output_file.c_str());
   }
+
 
   if (Print_unclassified) {
     if (Unclassified_output_file == "-")
@@ -113,14 +129,33 @@ int main(int argc, char **argv) {
 
   struct timeval tv1, tv2;
   gettimeofday(&tv1, NULL);
-  for (int i = optind; i < argc; i++)
-    process_file(argv[i]);
+
+  if((Paired_end && ((argc - optind ) > 2)) || 
+     (!Paired_end && ((argc - optind ) > 1))  ) {
+    std::string es="[ERROR:]too many files specified:";
+    for (int i = optind; i < argc; i++) {
+      es += std::string(argv[i]) + std::string(" ");
+    }
+    std::cerr << es << std::endl;
+    usage();
+  }
+
+  for (int i = optind; i < argc; i++) 
+    if(Paired_end) {
+      i++;
+      if(i > argc) { errx(EX_USAGE, "specify even number of files for paired end (-2) processing;");}
+      process_file(argv[i-1], argv[i]);
+    } else {
+      if(i > argc) { errx(EX_USAGE, "specify single file for single read processing");}
+      process_file(argv[i], NULL);
+    }
   gettimeofday(&tv2, NULL);
 
   report_stats(tv1, tv2);
 
   return 0;
 }
+#endif
 
 void report_stats(struct timeval time1, struct timeval time2) {
   time2.tv_usec -= time1.tv_usec;
@@ -146,15 +181,23 @@ void report_stats(struct timeval time1, struct timeval time2) {
           (total_sequences - total_classified) * 100.0 / total_sequences);
 }
 
-void process_file(char *filename) {
-  string file_str(filename);
-  DNASequenceReader *reader;
-  DNASequence dna;
+ void process_file(char *filename, char *filename2) {
+  string file_str(filename), file_str2;
+  if(Paired_end) {file_str2=filename2;}
 
-  if (Fastq_input)
+  int lineno=0;
+
+  DNASequenceReader *reader, *reader2;
+  DNASequence dna, dna2;
+  if (Fastq_input) {
     reader = new FastqReader(file_str);
-  else
+    if(Paired_end) {
+      std::cout << "xx" << file_str2 << std::endl;
+      reader2 = new FastqReader(file_str2);
+    }
+  }  else {
     reader = new FastaReader(file_str);
+  }
 
   #pragma omp parallel
   {
@@ -168,8 +211,15 @@ void process_file(char *filename) {
       {
         while (total_nt < Work_unit_size) {
           dna = reader->next_sequence();
+	  lineno++;
           if (! reader->is_valid())
             break;
+	  if(Paired_end) {
+	    dna2 = reader2->next_sequence();
+	    if(! dna.merge(dna2)) {
+	      errx(EX_USAGE, "FASTQ ERROR: reads not paired[%d](dna.id,dna2.id)=%s,%s",lineno,dna.id.c_str(),dna2.id.c_str());
+	    }
+	  }
           work_unit.push_back(dna);
           total_nt += dna.seq.size();
         }
@@ -180,9 +230,10 @@ void process_file(char *filename) {
       kraken_output_ss.str("");
       classified_output_ss.str("");
       unclassified_output_ss.str("");
-      for (size_t j = 0; j < work_unit.size(); j++)
+      for (size_t j = 0; j < work_unit.size(); j++) {
         classify_sequence( work_unit[j], kraken_output_ss,
                            classified_output_ss, unclassified_output_ss );
+      }
 
       #pragma omp critical(write_output)
       {
@@ -200,12 +251,6 @@ void process_file(char *filename) {
   }  // end parallel section
 
   delete reader;
-  if (Print_kraken)
-    (*Kraken_output) << std::flush;
-  if (Print_classified)
-    (*Classified_output) << std::flush;
-  if (Print_unclassified)
-    (*Unclassified_output) << std::flush;
 }
 
 void classify_sequence(DNASequence &dna, ostringstream &koss,
@@ -297,6 +342,10 @@ void classify_sequence(DNASequence &dna, ostringstream &koss,
   }
 
   koss << endl;
+  
+  if(Map_filename != ""){
+    FQ_mapper->write(dna, call, Paired_end);
+  }
 }
 
 string hitlist_string(vector<uint32_t> &taxa, vector<uint8_t> &ambig)
@@ -352,8 +401,17 @@ void parse_command_line(int argc, char **argv) {
 
   if (argc > 1 && strcmp(argv[1], "-h") == 0)
     usage(0);
-  while ((opt = getopt(argc, argv, "d:i:t:u:n:m:o:qfcC:U:M")) != -1) {
+  while ((opt = getopt(argc, argv, "p:x:d:i:t:u:n:m:o:qfcC2U:M")) != -1) {
     switch (opt) {
+      case '2' :
+	Paired_end = true;
+	break;
+      case 'p' :
+	Map_filename = optarg;
+	break;
+      case 'x' :
+	FQ_out_prefix = optarg;
+	break;
       case 'd' :
         DB_filename = optarg;
         break;
@@ -430,18 +488,22 @@ void parse_command_line(int argc, char **argv) {
   if (optind == argc) {
     cerr << "No sequence data files specified" << endl;
   }
+
 }
 
 void usage(int exit_code) {
   cerr << "Usage: classify [options] <fasta/fastq file(s)>" << endl
-       << endl
+       <<  endl
        << "Options: (*mandatory)" << endl
        << "* -d filename      Kraken DB filename" << endl
        << "* -i filename      Kraken DB index filename" << endl
+       << "  -p filename      nodes to fastq name map filename" << endl
+       << "  -x prefix        prefix for outputting fastq's, see -p" << endl
        << "  -n filename      NCBI Taxonomy nodes file" << endl
        << "  -o filename      Output file for Kraken output" << endl
        << "  -t #             Number of threads" << endl
        << "  -u #             Thread work unit size (in bp)" << endl
+       << "  -2               Files are paired end" << endl
        << "  -q               Quick operation" << endl
        << "  -m #             Minimum hit count (ignored w/o -q)" << endl
        << "  -C filename      Print classified sequences" << endl

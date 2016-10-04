@@ -20,15 +20,22 @@
 #ifndef SEQREADER_HPP
 #define SEQREADER_HPP
 
+#include <memory>
+#include <gzstream.h>
 #include "kraken_headers.hpp"
 
 namespace kraken {
-  typedef struct {
+
+  class DNASequence {
+  public:
+    bool merge(DNASequence d);
+    void split(DNASequence *d1, DNASequence *d2);
+    void write( std::shared_ptr<std::ofstream> fqout, uint32_t call, std::string rname_suffix);
     std::string id;
     std::string header_line;  // id + optional description
     std::string seq;
     std::string quals;
-  } DNASequence;
+  };
 
   class DNASequenceReader {
     public:
@@ -52,12 +59,14 @@ namespace kraken {
   class FastqReader : public DNASequenceReader {
     public:
     FastqReader(std::string filename);
+    ~FastqReader();
     DNASequence next_sequence();
     bool is_valid();
 
     private:
     std::ifstream file;
     bool valid;
+    gz::igzstream gzfile;
   };
 }
 
