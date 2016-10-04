@@ -1,5 +1,5 @@
 /*
- * Copyright 2016, Kimberly Robasky <krobasky@gmail.com>
+ * created by Kimberly Robasky, Q2 Solutions|EA Genomics
  *
  * This file is part of the Kraken taxonomic sequence classification system.
  *
