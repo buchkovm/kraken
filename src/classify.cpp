@@ -318,6 +318,10 @@ void classify_sequence(DNASequence &dna, ostringstream &koss,
     }
   }
 
+  if (Map_filename != ""){
+    FQ_mapper->write(dna, call, Paired_end);
+  }
+
   if (! Print_kraken)
     return;
 
@@ -343,9 +347,6 @@ void classify_sequence(DNASequence &dna, ostringstream &koss,
 
   koss << endl;
   
-  if(Map_filename != ""){
-    FQ_mapper->write(dna, call, Paired_end);
-  }
 }
 
 string hitlist_string(vector<uint32_t> &taxa, vector<uint8_t> &ambig)
@@ -401,7 +402,7 @@ void parse_command_line(int argc, char **argv) {
 
   if (argc > 1 && strcmp(argv[1], "-h") == 0)
     usage(0);
-  while ((opt = getopt(argc, argv, "p:x:d:i:t:u:n:m:o:qfcC2U:M")) != -1) {
+  while ((opt = getopt(argc, argv, "p:x:d:i:t:u:n:m:o:qfcC:2U:MS")) != -1) {
     switch (opt) {
       case '2' :
 	Paired_end = true;
@@ -454,6 +455,9 @@ void parse_command_line(int argc, char **argv) {
       case 'U' :
         Print_unclassified = true;
         Unclassified_output_file = optarg;
+        break;
+      case 'S' :
+        Print_kraken = false;
         break;
       case 'o' :
         Kraken_output_file = optarg;
@@ -508,6 +512,7 @@ void usage(int exit_code) {
        << "  -m #             Minimum hit count (ignored w/o -q)" << endl
        << "  -C filename      Print classified sequences" << endl
        << "  -U filename      Print unclassified sequences" << endl
+       << "  -S               Suppress Kraken output" << endl
        << "  -f               Input is in FASTQ format" << endl
        << "  -c               Only include classified reads in output" << endl
        << "  -M               Preload database files" << endl
