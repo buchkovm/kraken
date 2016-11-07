@@ -32,7 +32,7 @@ namespace kraken {
   // Basic constructor
   FQMapper::FQMapper() {
     bzero(call_name_map, sizeof(call_name_map));
-    std::cout << "hi 1" << std::endl; // xxx
+    //std::cout << "hi 1" << std::endl; // xxx
   }
   
 #define MAX_FASTQ_NAME_LENGTH 256
@@ -41,7 +41,7 @@ namespace kraken {
   // ptr points to mmap'ed existing file opened in read or read/write mode
   FQMapper::FQMapper(char *ptr, std::string prefix) {
 
-    std::cout << "hi 2" << std::endl; // xxx
+    //std::cout << "hi 2" << std::endl; // xxx
     out_file_prefix = prefix;
 
     // fill in call_name_map, only open files as needed
