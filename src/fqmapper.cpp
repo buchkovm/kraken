@@ -132,13 +132,16 @@ namespace kraken {
           // ...and write the FASTQ record out to the files
           std::shared_ptr<std::ofstream> fqout = fp_v->at(0);
           if(Paired_end) {
-            d1.write(fqout, call, "\\1");
+            d1.write(fqout);
+//          d1.write(fqout, call, "\\1");
               
             fqout = fp_v->at(1);
-            d2.write(fqout, call, "\\2");
+            d2.write(fqout);
+//          d2.write(fqout, call, "\\2");
               
           } else {
-            dna.write(fqout, call, "");
+            dna.write(fqout);
+//          dna.write(fqout, call, "");
           }
     
           if(debug) {std::cout<<(*g)<< " "; }
