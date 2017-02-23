@@ -30,7 +30,8 @@ namespace kraken {
   public:
     bool merge(DNASequence d);
     void split(DNASequence *d1, DNASequence *d2);
-    void write( std::shared_ptr<std::ofstream> fqout, uint32_t call, std::string rname_suffix);
+    void write(std::shared_ptr<std::ofstream> fqout, uint32_t call, std::string rname_suffix);
+    void write(std::shared_ptr<std::ofstream> fqout);
     std::string id;
     std::string header_line;  // id + optional description
     std::string seq;

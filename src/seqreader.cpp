@@ -46,8 +46,6 @@ namespace kraken {
   void DNASequence::split(DNASequence *d1, DNASequence *d2) {
     uint32_t split_pos = quals.find((char) 30);
     if(split_pos == (uint32_t)std::string::npos) { errx(EX_USAGE, "CODE ERROR: request to split read that was never merged");};
-    d1->id = id; d1->id.resize(id.length()-2); // cut off '\1' on the end
-    d2->id = id; d2->id.resize(id.length()-2);
     d1->header_line = header_line;
     d2->header_line = header_line;
 
@@ -57,8 +55,20 @@ namespace kraken {
     d2->seq = seq.substr(split_pos + 1, seq.size());
   }
   
-  void DNASequence::write( std::shared_ptr<std::ofstream> fqout, uint32_t call, std::string rname_suffix) {
-    *fqout << "@" << id << "(" << call << ")" << rname_suffix << std::endl; 
+  // Output the line with the id followed by the call and the suffix
+  // <id>(<call>)<suffix> 
+  // E.g.: @D00845:21:CA8E3ANXX:1:1101:1088:1957(9606)/1 
+  void DNASequence::write( std::shared_ptr<std::ofstream> fqout, uint32_t call, std::string rname_suffix) { 
+    *fqout << "@" << id << "(" << call << ")" << rname_suffix << std::endl;
+    *fqout << seq << std::endl;
+    *fqout << "+" << std::endl;
+    *fqout << quals << std::endl;
+  }
+
+  // Output the line with the entire header, no call and no suffix
+  // E.g.: @D00845:21:CA8E3ANXX:1:1101:1088:1957 1:N:0: ATAGCGAC
+  void DNASequence::write( std::shared_ptr<std::ofstream> fqout) {
+    *fqout << "@" << header_line << std::endl; 
     *fqout << seq << std::endl;
     *fqout << "+" << std::endl;
     *fqout << quals << std::endl;
@@ -99,7 +109,6 @@ namespace kraken {
     dna.header_line = line.substr(1);
     istringstream seq_id(dna.header_line);
     seq_id >> dna.id;
-
     ostringstream seq_ss;
 
     while (file.good()) {
@@ -167,6 +176,9 @@ namespace kraken {
     dna.header_line = line.substr(1);
     istringstream line_ss(dna.header_line);
     
+    // This stops at the first whitespace character.
+    // The id is passed to classify. Including additional data from the 
+    // header causes problems for classify. 
     line_ss >> dna.id;
 
     getline(file, dna.seq);
